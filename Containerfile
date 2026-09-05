@@ -1,16 +1,16 @@
 FROM ubuntu:22.04
 
-LABEL maintainer="ARM64 Desktop Environment"
+LABEL maintainer="ARM64 Desktop Environment (Termux-X11 Optimized)"
 ENV DEBIAN_FRONTEND=noninteractive
-ENV DISPLAY=:1
-ENV VNC_PORT=5901
+ENV DISPLAY=:0
 ENV USER=root
 
 # ------------------------------------------------------------------------------
-# STEP 1: System Init, Core Dependencies, GUI, VNC, and Audio Stack
+# STEP 1: Core Dependencies, X11, Desktop Environment, and Audio Stack
 # ------------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus \
+    dbus-x11 \
     ca-certificates \
     wget \
     curl \
@@ -25,8 +25,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     pkg-config \
-    dbus-x11 \
-    dbus-user-session \
     wl-clipboard \
     zenity \
     pulseaudio-utils \
@@ -35,12 +33,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mesa-utils \
     xfce4 \
     xfce4-goodies \
-    tigervnc-standalone-server \
     x11-xserver-utils \
+    x11-utils \
+    x11-apps \
+    xwayland \
     software-properties-common \
-    && dbus-uuidgen > /etc/machine-id \
-    && mkdir -p /var/lib/dbus \
-    && ln -sf /etc/machine-id /var/lib/dbus/machine-id
+    && rm -f /etc/machine-id /var/lib/dbus/machine-id \
+    && dbus-uuidgen --ensure=/etc/machine-id
 
 # ------------------------------------------------------------------------------
 # STEP 1.5: Node.js 24 Installation
@@ -53,12 +52,7 @@ RUN mkdir -p /etc/apt/keyrings && \
 # ------------------------------------------------------------------------------
 # STEP 2: Repositories & Native ARM64 Software Stack
 # ------------------------------------------------------------------------------
-# Add FEX-Emu ARM64 PPA
-RUN add-apt-repository -y ppa:fex-emu/fex || true
-
-# Note: Removed pcsx2 as it lacks native arm64 deb packages in Ubuntu 22.04 repos
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    fex-emu-arm64 \
     wine \
     wine64 \
     kodi \
@@ -88,7 +82,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     || true
 
 # ------------------------------------------------------------------------------
-# STEP 3: Standalone ARM64 Apps & Helper Scripts
+# STEP 3: Standalone ARM64 Apps (Extracted to bypass FUSE requirements)
 # ------------------------------------------------------------------------------
 # Download Zach Morris Repository (IAGL) for Kodi
 RUN mkdir -p /root/Downloads && \
@@ -97,16 +91,26 @@ RUN mkdir -p /root/Downloads && \
         wget -q -O /root/Downloads/repository.zachmorris.zip "$IAGL_REPO_URL"; \
     fi
 
-# Download DuckStation ARM64 Release
-RUN DUCK_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/repos/stenzek/duckstation/releases/latest | jq -r ".assets[]? | select(.name | contains(\"arm64\") or contains(\"aarch64\")) | select(.name | endswith(\".AppImage\") or endswith(\".tar.gz\")) | .browser_download_url" | head -n 1) && \
+# Extract DuckStation AppImage
+RUN DUCK_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/repos/stenzek/duckstation/releases/latest | jq -r ".assets[]? | select(.name | contains(\"arm64\") or contains(\"aarch64\")) | select(.name | endswith(\".AppImage\")) | .browser_download_url" | head -n 1) && \
     if [ -n "$DUCK_ARM_URL" ] && [ "$DUCK_ARM_URL" != "null" ]; then \
-        wget -q -O /usr/local/bin/duckstation "$DUCK_ARM_URL" && chmod 755 /usr/local/bin/duckstation; \
+        wget -q -O /tmp/duckstation.AppImage "$DUCK_ARM_URL" && \
+        chmod +x /tmp/duckstation.AppImage && \
+        cd /tmp && ./duckstation.AppImage --appimage-extract && \
+        mv /tmp/squashfs-root /opt/duckstation && \
+        ln -s /opt/duckstation/AppRun /usr/local/bin/duckstation && \
+        rm -f /tmp/duckstation.AppImage; \
     fi
 
-# Download PPSSPP ARM64 Release
-RUN PPSSPP_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/repos/hrydgard/ppsspp/releases/latest | jq -r ".assets[]? | select(.name | contains(\"arm64\") or contains(\"aarch64\")) | select(.name | endswith(\".AppImage\") or endswith(\".tar.gz\")) | .browser_download_url" | head -n 1) && \
+# Extract PPSSPP AppImage
+RUN PPSSPP_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/repos/hrydgard/ppsspp/releases/latest | jq -r ".assets[]? | select(.name | contains(\"arm64\") or contains(\"aarch64\")) | select(.name | endswith(\".AppImage\")) | .browser_download_url" | head -n 1) && \
     if [ -n "$PPSSPP_ARM_URL" ] && [ "$PPSSPP_ARM_URL" != "null" ]; then \
-        wget -q -O /usr/local/bin/ppsspp "$PPSSPP_ARM_URL" && chmod 755 /usr/local/bin/ppsspp; \
+        wget -q -O /tmp/ppsspp.AppImage "$PPSSPP_ARM_URL" && \
+        chmod +x /tmp/ppsspp.AppImage && \
+        cd /tmp && ./ppsspp.AppImage --appimage-extract && \
+        mv /tmp/squashfs-root /opt/ppsspp && \
+        ln -s /opt/ppsspp/AppRun /usr/local/bin/ppsspp && \
+        rm -f /tmp/ppsspp.AppImage; \
     fi
 
 # Download NetherSX2 Patch Builder Script
@@ -126,14 +130,14 @@ RUN LUTRIS_DEB_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.co
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------------------------
-# STEP 4: Configuration & Entrypoint
+# STEP 4: Termux-X11 Startup Entrypoint Configuration
 # ------------------------------------------------------------------------------
-# Setup VNC Startup configuration
-RUN mkdir -p /root/.vnc && \
-    echo '#!/bin/sh\nunset SESSION_MANAGER\nunset DBUS_SESSION_BUS_ADDRESS\nexec startxfce4' > /root/.vnc/xstartup && \
-    chmod +x /root/.vnc/xstartup
+RUN echo '#!/bin/sh\n\
+unset SESSION_MANAGER\n\
+unset DBUS_SESSION_BUS_ADDRESS\n\
+export DISPLAY=:0\n\
+export PULSE_SERVER=127.0.0.1:4713\n\
+dbus-launch --exit-with-session startxfce4' > /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh
 
-EXPOSE 5901
-
-# Entrypoint script to launch VNC Server in foreground mode
-CMD ["sh", "-c", "vncserver :1 -geometry 1280x720 -depth 24 -fg"]
+CMD ["/usr/local/bin/entrypoint.sh"]
