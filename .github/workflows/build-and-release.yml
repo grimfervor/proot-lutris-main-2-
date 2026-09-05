@@ -1,4 +1,4 @@
-name: Build and Release Termux-X11 Image
+name: Build and Release (No Registry)
 
 on:
   push:
@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: write
 
     steps:
       - name: Checkout Code
@@ -23,31 +22,34 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build Docker Image with Buildx
         run: |
           docker buildx build \
             --platform linux/arm64 \
-            -t ghcr.io/${{ github.repository }}:${{ github.ref_name }} \
-            -t ghcr.io/${{ github.repository }}:latest \
+            -t gamebox-arm64:${{ github.ref_name }} \
             -f Containerfile \
             --load .
 
+      - name: Create Builds Directory
+        run: mkdir -p builds
+
       - name: Export and Compress Docker Image
         run: |
-          docker save ghcr.io/${{ github.repository }}:${{ github.ref_name }} | gzip -9 > gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz
+          docker save gamebox-arm64:${{ github.ref_name }} | gzip -9 > builds/gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz
+
+      - name: Commit Image Archive to Repository
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add builds/gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz
+          git commit -m "build: add image archive for ${{ github.ref_name }}"
+          git push origin HEAD:${{ github.ref }}
 
       - name: Create GitHub Release and Upload Asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" \
-            "./gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz" \
+            "builds/gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz" \
             --title "GameBox Termux-X11 ${{ github.ref_name }}" \
             --generate-notes
