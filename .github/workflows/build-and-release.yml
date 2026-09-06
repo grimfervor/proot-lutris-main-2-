@@ -1,4 +1,4 @@
-name: Build, Store Tar in Repo, and Release
+name: Build, Commit Archive to Repo, and Release
 
 on:
   push:
@@ -16,25 +16,23 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Build Docker Image
+      - name: Build Image with Standard Docker
         run: |
-          docker build \
-            -t gamebox-arm64:${{ github.ref_name }} \
-            -f Containerfile .
+          docker build -t gamebox-arm64:${{ github.ref_name }} -f Containerfile .
 
       - name: Create Builds Directory
         run: mkdir -p builds
 
-      - name: Export and Compress Docker Image Archive
+      - name: Export and Compress Image Archive
         run: |
           docker save gamebox-arm64:${{ github.ref_name }} | gzip -9 > builds/gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz
 
-      - name: Commit Tarball Archive to Repository
+      - name: Commit Image Archive to Repository
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add builds/gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz
-          git commit -m "build: save image tarball for ${{ github.ref_name }}"
+          git commit -m "build: save image archive for ${{ github.ref_name }}"
           git push origin HEAD:${{ github.ref }}
 
       - name: Create GitHub Release and Upload Asset
