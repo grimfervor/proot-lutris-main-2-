@@ -1,4 +1,4 @@
-name: Build, Commit Archive to Repo, and Release
+name: Native ARM64 Build, Commit Archive to Repo, and Release
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm64
     permissions:
       contents: write
 
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Build Image with Standard Docker
+      - name: Build Native ARM64 Image
         run: |
           docker build -t gamebox-arm64:${{ github.ref_name }} -f Containerfile .
 
@@ -32,7 +32,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add builds/gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz
-          git commit -m "build: save image archive for ${{ github.ref_name }}"
+          git commit -m "build: save native arm64 image archive for ${{ github.ref_name }}"
           git push origin HEAD:${{ github.ref }}
 
       - name: Create GitHub Release and Upload Asset
