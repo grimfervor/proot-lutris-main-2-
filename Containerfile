@@ -1,13 +1,9 @@
-# Explicitly set target architecture for QEMU emulation hosts
-FROM --platform=linux/arm64 ubuntu:22.04
+FROM ubuntu:22.04
 
-LABEL maintainer="ARM64 Desktop Environment (Termux-X11 QEMU Optimized)"
+LABEL maintainer="ARM64 Desktop Environment (Termux-X11 Buildx Optimized)"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:0
 ENV USER=root
-
-# Prevent QEMU thread locking during apt-get operations
-ENV QEMU_EXECVE=1
 
 # ------------------------------------------------------------------------------
 # STEP 1: Core Dependencies, X11, Desktop Environment, and Audio Stack
@@ -87,16 +83,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     || true
 
 # ------------------------------------------------------------------------------
-# STEP 3: Standalone Apps & AppImage Extractions (PRoot + QEMU Safe)
+# STEP 3: Standalone Apps & AppImage Extractions (PRoot Safe)
 # ------------------------------------------------------------------------------
-# Kodi Addon Repo
+# Download Kodi Addon Repo
 RUN mkdir -p /root/Downloads && \
     IAGL_REPO_URL=$(curl -sL https://api.github.com/repos/zach-morris/repository.zachmorris/releases/latest | jq -r ".assets[]? | select(.name | endswith(\".zip\")) | .browser_download_url" | head -n 1) && \
     if [ -n "$IAGL_REPO_URL" ] && [ "$IAGL_REPO_URL" != "null" ]; then \
         wget -q -O /root/Downloads/repository.zachmorris.zip "$IAGL_REPO_URL"; \
     fi
 
-# Extract DuckStation AppImage (bypasses FUSE and run-in-QEMU limitations)
+# Extract DuckStation AppImage
 RUN DUCK_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/repos/stenzek/duckstation/releases/latest | jq -r ".assets[]? | select(.name | contains(\"arm64\") or contains(\"aarch64\")) | select(.name | endswith(\".AppImage\")) | .browser_download_url" | head -n 1) && \
     if [ -n "$DUCK_ARM_URL" ] && [ "$DUCK_ARM_URL" != "null" ]; then \
         wget -q -O /tmp/duckstation.AppImage "$DUCK_ARM_URL" && \
@@ -107,7 +103,7 @@ RUN DUCK_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/
         rm -rf /tmp/duckstation.AppImage /tmp/squashfs-root; \
     fi
 
-# Extract PPSSPP AppImage (bypasses FUSE and run-in-QEMU limitations)
+# Extract PPSSPP AppImage
 RUN PPSSPP_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/repos/hrydgard/ppsspp/releases/latest | jq -r ".assets[]? | select(.name | contains(\"arm64\") or contains(\"aarch64\")) | select(.name | endswith(\".AppImage\")) | .browser_download_url" | head -n 1) && \
     if [ -n "$PPSSPP_ARM_URL" ] && [ "$PPSSPP_ARM_URL" != "null" ]; then \
         wget -q -O /tmp/ppsspp.AppImage "$PPSSPP_ARM_URL" && \
@@ -131,7 +127,7 @@ RUN LUTRIS_DEB_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.co
         rm -f /tmp/lutris.deb; \
     fi
 
-# Complete APT cache purge to minimize tarball archive size
+# Cache and temporary file cleanup
 RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archives/*
 
