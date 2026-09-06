@@ -1,6 +1,6 @@
 FROM ubuntu:22.04
 
-LABEL maintainer="ARM64 Desktop Environment (Termux-X11 Optimized)"
+LABEL maintainer="ARM64 Desktop Environment (Termux-X11 & Offline Build Optimized)"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:0
 ENV USER=root
@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xwayland \
     software-properties-common \
     && rm -f /etc/machine-id /var/lib/dbus/machine-id \
+    && mkdir -p /var/lib/dbus \
     && dbus-uuidgen --ensure=/etc/machine-id
 
 # ------------------------------------------------------------------------------
@@ -50,7 +51,7 @@ RUN mkdir -p /etc/apt/keyrings && \
     apt-get update && apt-get install -y --no-install-recommends nodejs
 
 # ------------------------------------------------------------------------------
-# STEP 2: Repositories & Native ARM64 Software Stack
+# STEP 2: Native Software Stack
 # ------------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wine \
@@ -82,9 +83,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     || true
 
 # ------------------------------------------------------------------------------
-# STEP 3: Standalone ARM64 Apps (Extracted to bypass FUSE requirements)
+# STEP 3: Standalone Apps & Clean Extraction for PRoot
 # ------------------------------------------------------------------------------
-# Download Zach Morris Repository (IAGL) for Kodi
+# Download Kodi Addon Repo
 RUN mkdir -p /root/Downloads && \
     IAGL_REPO_URL=$(curl -sL https://api.github.com/repos/zach-morris/repository.zachmorris/releases/latest | jq -r ".assets[]? | select(.name | endswith(\".zip\")) | .browser_download_url" | head -n 1) && \
     if [ -n "$IAGL_REPO_URL" ] && [ "$IAGL_REPO_URL" != "null" ]; then \
@@ -98,8 +99,8 @@ RUN DUCK_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/
         chmod +x /tmp/duckstation.AppImage && \
         cd /tmp && ./duckstation.AppImage --appimage-extract && \
         mv /tmp/squashfs-root /opt/duckstation && \
-        ln -s /opt/duckstation/AppRun /usr/local/bin/duckstation && \
-        rm -f /tmp/duckstation.AppImage; \
+        ln -sf /opt/duckstation/AppRun /usr/local/bin/duckstation && \
+        rm -rf /tmp/duckstation.AppImage /tmp/squashfs-root; \
     fi
 
 # Extract PPSSPP AppImage
@@ -109,8 +110,8 @@ RUN PPSSPP_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.co
         chmod +x /tmp/ppsspp.AppImage && \
         cd /tmp && ./ppsspp.AppImage --appimage-extract && \
         mv /tmp/squashfs-root /opt/ppsspp && \
-        ln -s /opt/ppsspp/AppRun /usr/local/bin/ppsspp && \
-        rm -f /tmp/ppsspp.AppImage; \
+        ln -sf /opt/ppsspp/AppRun /usr/local/bin/ppsspp && \
+        rm -rf /tmp/ppsspp.AppImage /tmp/squashfs-root; \
     fi
 
 # Download NetherSX2 Patch Builder Script
@@ -126,18 +127,20 @@ RUN LUTRIS_DEB_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.co
         rm -f /tmp/lutris.deb; \
     fi
 
-# Cleanup APT caches
-RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+# Optimization for minimal size
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archives/*
 
 # ------------------------------------------------------------------------------
-# STEP 4: Termux-X11 Startup Entrypoint Configuration
+# STEP 4: Termux-X11 Entrypoint
 # ------------------------------------------------------------------------------
-RUN echo '#!/bin/sh\n\
+RUN printf '#!/bin/sh\n\
 unset SESSION_MANAGER\n\
 unset DBUS_SESSION_BUS_ADDRESS\n\
 export DISPLAY=:0\n\
 export PULSE_SERVER=127.0.0.1:4713\n\
-dbus-launch --exit-with-session startxfce4' > /usr/local/bin/entrypoint.sh && \
+rm -rf /tmp/.X0-lock /tmp/.X11-unix/X0\n\
+dbus-launch --exit-with-session startxfce4\n' > /usr/local/bin/entrypoint.sh && \
     chmod +x /usr/local/bin/entrypoint.sh
 
 CMD ["/usr/local/bin/entrypoint.sh"]
