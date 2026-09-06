@@ -6,7 +6,7 @@ ENV DISPLAY=:0
 ENV USER=root
 
 # ------------------------------------------------------------------------------
-# STEP 1: Core Dependencies, X11, Desktop Environment, and Audio Stack
+# STEP 1: Core Dependencies, X11, Desktop Environment, and Node.js 24
 # ------------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus \
@@ -38,17 +38,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11-apps \
     xwayland \
     software-properties-common \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
     && rm -f /etc/machine-id /var/lib/dbus/machine-id \
     && mkdir -p /var/lib/dbus \
-    && dbus-uuidgen --ensure=/etc/machine-id
-
-# ------------------------------------------------------------------------------
-# STEP 1.5: Node.js 24 Installation
-# ------------------------------------------------------------------------------
-RUN mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \
-    apt-get update && apt-get install -y --no-install-recommends nodejs
+    && dbus-uuidgen --ensure=/etc/machine-id \
+    && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------------------------
 # STEP 2: Native Software Stack
@@ -80,7 +77,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cabextract \
     p7zip-full \
     shared-mime-info \
-    || true
+    || true && \
+    rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------------------------
 # STEP 3: Standalone Apps & AppImage Extractions (PRoot Safe)
@@ -92,7 +90,7 @@ RUN mkdir -p /root/Downloads && \
         wget -q -O /root/Downloads/repository.zachmorris.zip "$IAGL_REPO_URL"; \
     fi
 
-# Extract DuckStation AppImage
+# Extract DuckStation AppImage (if available for arm64)
 RUN DUCK_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/repos/stenzek/duckstation/releases/latest | jq -r ".assets[]? | select(.name | contains(\"arm64\") or contains(\"aarch64\")) | select(.name | endswith(\".AppImage\")) | .browser_download_url" | head -n 1) && \
     if [ -n "$DUCK_ARM_URL" ] && [ "$DUCK_ARM_URL" != "null" ]; then \
         wget -q -O /tmp/duckstation.AppImage "$DUCK_ARM_URL" && \
@@ -103,7 +101,7 @@ RUN DUCK_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/
         rm -rf /tmp/duckstation.AppImage /tmp/squashfs-root; \
     fi
 
-# Extract PPSSPP AppImage
+# Extract PPSSPP AppImage (if available for arm64)
 RUN PPSSPP_ARM_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.com/repos/hrydgard/ppsspp/releases/latest | jq -r ".assets[]? | select(.name | contains(\"arm64\") or contains(\"aarch64\")) | select(.name | endswith(\".AppImage\")) | .browser_download_url" | head -n 1) && \
     if [ -n "$PPSSPP_ARM_URL" ] && [ "$PPSSPP_ARM_URL" != "null" ]; then \
         wget -q -O /tmp/ppsspp.AppImage "$PPSSPP_ARM_URL" && \
@@ -127,7 +125,7 @@ RUN LUTRIS_DEB_URL=$(curl -sL -H "User-Agent: Mozilla/5.0" https://api.github.co
         rm -f /tmp/lutris.deb; \
     fi
 
-# Cache and temporary file cleanup
+# Final Cleanup
 RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archives/*
 
@@ -137,10 +135,10 @@ RUN apt-get clean && \
 RUN printf '#!/bin/sh\n\
 unset SESSION_MANAGER\n\
 unset DBUS_SESSION_BUS_ADDRESS\n\
-export DISPLAY=:0\n\
-export PULSE_SERVER=127.0.0.1:4713\n\
+export DISPLAY=${DISPLAY:-:0}\n\
+export PULSE_SERVER=${PULSE_SERVER:-127.0.0.1:4713}\n\
 rm -rf /tmp/.X0-lock /tmp/.X11-unix/X0\n\
-dbus-launch --exit-with-session startxfce4\n' > /usr/local/bin/entrypoint.sh && \
+exec dbus-launch --exit-with-session startxfce4\n' > /usr/local/bin/entrypoint.sh && \
     chmod +x /usr/local/bin/entrypoint.sh
 
-CMD ["/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

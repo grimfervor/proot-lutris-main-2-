@@ -15,6 +15,17 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Free Disk Space on Runner
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo apt-get clean
+          df -h
 
       - name: Set up QEMU Emulation
         uses: docker/setup-qemu-action@v3
@@ -23,26 +34,34 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build ARM64 Image with Docker Buildx
-        run: |
-          docker buildx build \
-            --platform linux/arm64 \
-            -t gamebox-arm64:${{ github.ref_name }} \
-            -f Containerfile \
-            --load .
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Containerfile
+          platforms: linux/arm64
+          tags: gamebox-arm64:${{ github.ref_name }}
+          outputs: type=docker,dest=./gamebox-arm64.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Create Builds Directory
-        run: mkdir -p builds
-
-      - name: Export and Compress Image Archive
+      - name: Compress Container Image Archive
         run: |
-          docker save gamebox-arm64:${{ github.ref_name }} | gzip -9 > builds/gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz
+          mkdir -p builds
+          gzip -9 -c gamebox-arm64.tar > builds/gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz
+          rm gamebox-arm64.tar
 
       - name: Commit Image Archive to Repository
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Initialize Git LFS tracking for large compressed tarballs
+          git lfs install
+          git lfs track "builds/*.tar.gz"
+          git add .gitattributes
+          
           git add builds/gamebox-arm64-termux-x11-${{ github.ref_name }}.tar.gz
-          git commit -m "build: save arm64 image archive for ${{ github.ref_name }}"
+          git commit -m "build: save arm64 image archive for ${{ github.ref_name }}" || echo "No changes to commit"
           git push origin HEAD:${{ github.ref }}
 
       - name: Create GitHub Release and Upload Asset
